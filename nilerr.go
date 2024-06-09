@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"maps"
 
 	"github.com/gostaticanalysis/comment"
 	"github.com/gostaticanalysis/comment/passes/commentmap"
@@ -43,25 +44,69 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
-	var visit func(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value)
+	var visit func(b *ssa.BasicBlock, nonnil ssa.Value, assigned map[*ssa.Alloc]ssa.Value)
 
-	for i := range funcs {
-		for _, b := range funcs[i].Blocks {
-			if v := binOpErrNil(b, token.NEQ); v != nil {
-				if ret := isReturnNil(b.Succs[0]); ret != nil {
-					if !usesErrorValue(b.Succs[0], v) {
-						reportFail(v, ret, "error is not nil (%s) but it returns nil")
-					}
-				}
-			} else if v := binOpErrNil(b, token.EQL); v != nil {
-				if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-					if ret := isReturnError(b.Succs[0], v); ret != nil {
-						reportFail(v, ret, "error is nil (%s) but it returns error")
+	for _, fn := range funcs {
+		seen := make([]bool, len(fn.Blocks)) // seen[i] means visit should ignore block i
+		visit = func(b *ssa.BasicBlock, v ssa.Value, assigned map[*ssa.Alloc]ssa.Value) {
+			if seen[b.Index] {
+				return
+			}
+			seen[b.Index] = true
+			for _, instr := range b.Instrs {
+				switch instr := instr.(type) {
+				case *ssa.Store:
+					if alloc, ok := instr.Addr.(*ssa.Alloc); ok {
+						assigned[alloc] = instr.Val
 					}
 				}
 			}
-
+			if v != nil { // preceded by binOpErrNil
+				if ret := isReturnNil(b, assigned); ret != nil {
+					fmt.Println(v, "x", ret)
+					if !usesErrorValue(b, v) {
+						reportFail(v, ret, "error is not nil (%s) but it returns nil")
+					}
+				}
+			} else { // not preceded by binOpErrNil
+				vv := binOpErrNil(b, token.NEQ)
+				fmt.Println(vv)
+				if vv != nil { //
+					a := maps.Clone(assigned)
+					visit(b.Succs[0], vv, a)
+				} else {
+					for _, d := range b.Dominees() {
+						a := maps.Clone(assigned)
+						visit(d, nil, a)
+					}
+				}
+			}
+			// b.
 		}
+		_ = visit
+		for _, b := range fn.Blocks {
+			visit(b, nil, map[*ssa.Alloc]ssa.Value{})
+		}
+		// for _, b := range fn.Blocks {
+		// 	if v := binOpErrNil(b, token.NEQ); v != nil {
+		// 		fmt.Println("😍", pass.Fset.Position(v.Pos()).Line)
+		// 		for _, pred := range b.Succs[0].Preds {
+		// 			fmt.Println("\t", pred.Index, pred.Comment, pred, b.Succs[0])
+		// 		}
+		// 		if ret := isReturnNil(b.Succs[0]); ret != nil {
+		// 			if !usesErrorValue(b.Succs[0], v) {
+		// 				reportFail(v, ret, "error is not nil (%s) but it returns nil")
+		// 			}
+		// 		}
+		// 	} else if v := binOpErrNil(b, token.EQL); v != nil {
+		// 		if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
+		// 			if ret := isReturnError(b.Succs[0], v); ret != nil {
+		// 				reportFail(v, ret, "error is nil (%s) but it returns error")
+		// 			}
+		// 		}
+		// 	}
+
+		// }
 	}
 
 	return nil, nil
@@ -135,7 +180,7 @@ func isConst(v ssa.Value) bool {
 	return ok
 }
 
-func isReturnNil(b *ssa.BasicBlock) *ssa.Return {
+func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -152,14 +197,27 @@ func isReturnNil(b *ssa.BasicBlock) *ssa.Return {
 		}
 
 		errorReturnValues++
-		v, ok := res.(*ssa.Const)
-		if !ok {
+		switch v := res.(type) {
+		case *ssa.Const:
+			if !v.IsNil() {
+				return nil
+			}
+			fmt.Println("xxxx")
+		case *ssa.UnOp:
+			if v.Op == token.MUL {
+				if alloc, ok := v.X.(*ssa.Alloc); ok {
+					c, ok := assigned[alloc].(*ssa.Const)
+					if ok && c.IsNil() {
+						return ret
+					}
+				}
+			}
 			return nil
+		default:
+			fmt.Printf("unexpected return value type: %T\n", v)
 		}
+		return nil
 
-		if !v.IsNil() {
-			return nil
-		}
 	}
 
 	if errorReturnValues == 0 {

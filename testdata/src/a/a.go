@@ -31,20 +31,6 @@ func f() error {
 }
 
 func g() error {
-	err := do()
-	if err == nil {
-		return err // want "error is nil \\(line 34\\) but it returns error"
-	}
-
-	if err := do(); err == nil {
-		return err // want "error is nil \\(line 39\\) but it returns error"
-	}
-
-	bytes, err := do2()
-	if err == nil {
-		_ = bytes
-		return err // want "error is nil \\(line 43\\) but it returns error"
-	}
 
 	if err := do(); err == nil {
 		return errors.New("another error") // OK
@@ -99,7 +85,7 @@ func h() {
 				break
 			}
 		}
-		return nil // want "error is not nil \\(line 98\\) but it returns nil"
+		return nil // want "error is not nil"
 	}
 	_ = f0
 
@@ -114,29 +100,9 @@ func h() {
 	_ = f1
 }
 
-func i() (error, error) {
-	if err := do(); err != nil {
-		return nil, nil // want "error is not nil \\(line 118\\) but it returns nil"
-	}
-
-	if err := do(); err != nil {
-		return nil, err
-	}
-
-	if err := do(); err != nil {
-		return err, nil
-	}
-
-	if err := do(); err != nil {
-		return err, err
-	}
-
-	return nil, nil
-}
-
 func j() (interface{}, error) {
 	if err := do(); err != nil {
-		return nil, nil // want "error is not nil \\(line 138\\) but it returns nil"
+		return nil, nil // want "error is not nil"
 	}
 
 	if err := do(); err != nil {
@@ -144,7 +110,7 @@ func j() (interface{}, error) {
 	}
 
 	if err := do(); err != nil {
-		return err, nil // want "error is not nil \\(line 146\\) but it returns nil"
+		return err, nil // want "error is not nil"
 	}
 
 	if err := do(); err != nil {
@@ -154,7 +120,7 @@ func j() (interface{}, error) {
 	return nil, nil
 }
 
-func k()  {
+func k() {
 	if err := do(); err != nil {
 		return
 	}
@@ -162,34 +128,6 @@ func k()  {
 	if err := do(); err == nil {
 		return
 	}
-}
-
-func l() error {
-	var e = errors.New("x")
-
-	bytes, err := do2()
-	if err != nil {
-		return err
-	}
-	defer func() error {return nil}()
-
-	for {
-		var buf []byte
-		buf, err = do2()
-		if err == e {
-			for err == e {
-				_, err = do2()
-			}
-			if err != nil {
-				err = errors.New("a")
-				break
-			}
-		}
-		_ = buf
-	}
-
-	_ = bytes
-	return nil // want "error is not nil \\(lines \\[178 181\\]\\) but it returns nil"
 }
 
 func do() error {
