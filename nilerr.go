@@ -210,12 +210,10 @@ func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Retu
 			}
 			continue
 		case *ssa.UnOp:
-			if v.Op == token.MUL {
-				if alloc, ok := v.X.(*ssa.Alloc); ok {
-					c, ok := assigned[alloc].(*ssa.Const)
-					if ok && c.IsNil() {
-						continue
-					}
+			if p := alloc(v); p != nil {
+				c, ok := assigned[p].(*ssa.Const)
+				if ok && c.IsNil() {
+					continue
 				}
 			}
 			return nil
