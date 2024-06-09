@@ -69,7 +69,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					}
 				}
 			case precededByErrEqNil:
-				if ret := isReturnError(b, f.value); ret != nil {
+				if ret := isReturnError(b, f.value, assigned); ret != nil {
 					reportFail(f.value, ret, "error is nil (%s) but it returns error")
 				}
 			default:
@@ -103,12 +103,12 @@ type fact struct {
 	value ssa.Value
 }
 
-type kind string
+type kind int
 
 const (
-	precededByErrNeqNil kind = "preceded by binOpErrNil"
-	none                kind = ""
-	precededByErrEqNil  kind = "preceded by binOpErrNilEq"
+	none                kind = 0
+	precededByErrNeqNil kind = 1
+	precededByErrEqNil  kind = 2
 )
 
 func getValueLineNumbers(pass *analysis.Pass, v ssa.Value) []int {
@@ -224,7 +224,7 @@ func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Retu
 	return ret
 }
 
-func isReturnError(b *ssa.BasicBlock, errVal ssa.Value) *ssa.Return {
+func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, assigned map[*ssa.Alloc]ssa.Value) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -238,8 +238,27 @@ func isReturnError(b *ssa.BasicBlock, errVal ssa.Value) *ssa.Return {
 		if v == errVal {
 			return ret
 		}
+		if alloc(v) != nil && alloc(errVal) != nil && alloc(v) == alloc(errVal) {
+			return ret
+		}
+		if alloc(v) != nil && alloc(errVal) == nil && assigned[alloc(v)] == errVal {
+			return ret
+		}
 	}
 
+	return nil
+}
+
+// *t0 (t0 is a *ssa.Alloc) -> t0
+// otherwise returns nil
+func alloc(v ssa.Value) *ssa.Alloc {
+	if unop, ok := v.(*ssa.UnOp); ok {
+		if unop.Op == token.MUL {
+			if alloc, ok := unop.X.(*ssa.Alloc); ok {
+				return alloc
+			}
+		}
+	}
 	return nil
 }
 
