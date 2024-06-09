@@ -38,7 +38,8 @@ func g() (err error) {
 		return err // want "error is nil"
 	}
 
-	if err := do(); err == nil {
+	err = do()
+	if err == nil {
 		return err // want "error is nil"
 	}
 
@@ -48,45 +49,54 @@ func g() (err error) {
 		return err // want "error is nil"
 	}
 
-	if err := do(); err == nil {
+	err = do()
+	if err == nil {
 		return errors.New("another error") // OK
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return errors.New(err.Error()) // OK, error is wrapped
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		CustomLoggingFunc(err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		Logf(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		Logf(context.Background(), "error: %s", err.Error()) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		LogTypedf(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		LogSinglef(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		NewLogger().CustomLoggingFunc(err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		//lint:ignore nilerr reason
 		return nil // OK
 	}

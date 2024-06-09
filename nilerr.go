@@ -52,26 +52,54 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				return
 			}
 			seen[b.Index] = true
-			for _, instr := range b.Instrs {
-				switch instr := instr.(type) {
-				case *ssa.Store:
-					if alloc, ok := instr.Addr.(*ssa.Alloc); ok {
-						assigned[alloc] = instr.Val
-					}
-				}
-			}
 			switch f.kind {
 			case precededByErrNeqNil:
+				for _, instr := range b.Instrs {
+					switch instr := instr.(type) {
+					case *ssa.Store:
+						if a, ok := instr.Addr.(*ssa.Alloc); ok {
+							if alloc(instr.Val) != a {
+								assigned[a] = instr.Val
+							}
+						}
+					}
+				}
 				if ret := isReturnNil(b, assigned); ret != nil {
 					if !usesErrorValue(b, f.value) {
 						reportFail(f.value, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
 			case precededByErrEqNil:
+				a := assigned[alloc(f.value)]
+				for _, instr := range b.Instrs {
+					switch instr := instr.(type) {
+					case *ssa.Store:
+						if a, ok := instr.Addr.(*ssa.Alloc); ok {
+							if alloc(instr.Val) != a {
+								assigned[a] = instr.Val
+							}
+						}
+					}
+				}
 				if ret := isReturnError(b, f.value, assigned); ret != nil {
 					reportFail(f.value, ret, "error is nil (%s) but it returns error")
+					return
+				}
+				if ret := isReturnError(b, a, assigned); ret != nil {
+					reportFail(f.value, ret, "error is nil (%s) but it returns error")
+					return
 				}
 			default:
+				for _, instr := range b.Instrs {
+					switch instr := instr.(type) {
+					case *ssa.Store:
+						if a, ok := instr.Addr.(*ssa.Alloc); ok {
+							if alloc(instr.Val) != a {
+								assigned[a] = instr.Val
+							}
+						}
+					}
+				}
 				if vv := binOpErrNil(b, token.NEQ); vv != nil {
 					a := cloneAssigned(assigned)
 					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil}, a)
@@ -243,9 +271,6 @@ func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, assigned map[*ssa.Alloc]
 		if v == errVal {
 			return ret
 		}
-		if alloc(v) != nil && alloc(errVal) != nil && alloc(v) == alloc(errVal) {
-			return ret
-		}
 		if alloc(v) != nil && alloc(errVal) == nil && assigned[alloc(v)] == errVal {
 			return ret
 		}
@@ -354,6 +379,9 @@ func isUsedInSlice(sliceArg *ssa.Slice, errVal ssa.Value) bool {
 
 func isUsedInValue(value, lookedFor ssa.Value) bool {
 	if value == lookedFor {
+		return true
+	}
+	if alloc(value) != nil && alloc(lookedFor) != nil && alloc(value) == alloc(lookedFor) {
 		return true
 	}
 

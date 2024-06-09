@@ -11,4 +11,5 @@ func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, nilerr.Analyzer, "a")
 	analysistest.Run(t, testdata, nilerr.Analyzer, "b")
+	analysistest.Run(t, testdata, nilerr.Analyzer, "c")
 }
