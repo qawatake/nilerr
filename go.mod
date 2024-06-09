@@ -1,4 +1,4 @@
-module github.com/gostaticanalysis/nilerr
+module github.com/qawatake/nilerr
 
 go 1.15
 

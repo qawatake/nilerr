@@ -2,6 +2,10 @@
 
 [![pkg.go.dev][gopkg-badge]][gopkg]
 
+This repository is a fork of the [gostaticanalysis/nilerr](https://github.com/gostaticanalysis/nilerr) repository with additional patches applied.
+
+---
+
 `nilerr` finds code which returns nil even though it checks that error is not nil.
 
 ```go
@@ -38,10 +42,10 @@ func f() error {
 
 ## How to use
 ```
-$ go install github.com/gostaticanalysis/nilerr/cmd/nilerr@latest
+$ go install github.com/qawatake/nilerr/cmd/nilerr@latest
 $ nilerr ./...
 ```
 
 <!-- links -->
-[gopkg]: https://pkg.go.dev/github.com/gostaticanalysis/nilerr
-[gopkg-badge]: https://pkg.go.dev/badge/github.com/gostaticanalysis/nilerr?status.svg
+[gopkg]: https://pkg.go.dev/github.com/qawatake/nilerr
+[gopkg-badge]: https://pkg.go.dev/badge/github.com/qawatake/nilerr?status.svg
