@@ -63,14 +63,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			}
 			if v != nil { // preceded by binOpErrNil
 				if ret := isReturnNil(b, assigned); ret != nil {
-					fmt.Println(v, "x", ret)
+					// fmt.Println(v, "x", ret)
 					if !usesErrorValue(b, v) {
 						reportFail(v, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
 			} else { // not preceded by binOpErrNil
 				vv := binOpErrNil(b, token.NEQ)
-				fmt.Println(vv)
+				// fmt.Println(vv)
 				if vv != nil { //
 					a := maps.Clone(assigned)
 					visit(b.Succs[0], vv, a)
@@ -202,22 +202,20 @@ func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Retu
 			if !v.IsNil() {
 				return nil
 			}
-			fmt.Println("xxxx")
+			continue
 		case *ssa.UnOp:
 			if v.Op == token.MUL {
 				if alloc, ok := v.X.(*ssa.Alloc); ok {
 					c, ok := assigned[alloc].(*ssa.Const)
 					if ok && c.IsNil() {
-						return ret
+						continue
 					}
 				}
 			}
 			return nil
 		default:
-			fmt.Printf("unexpected return value type: %T\n", v)
+			return nil
 		}
-		return nil
-
 	}
 
 	if errorReturnValues == 0 {
