@@ -62,51 +62,37 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			}
 			switch f.kind {
-			case precededByBinOpErrNil:
+			case precededByErrNeqNil:
 				if ret := isReturnNil(b, assigned); ret != nil {
-					// fmt.Println(v, "x", ret)
 					if !usesErrorValue(b, f.value) {
 						reportFail(f.value, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
+			case precededByErrEqNil:
+				if ret := isReturnError(b, f.value); ret != nil {
+					reportFail(f.value, ret, "error is nil (%s) but it returns error")
+				}
 			default:
-				vv := binOpErrNil(b, token.NEQ)
-				// fmt.Println(vv)
-				if vv != nil { //
+				if vv := binOpErrNil(b, token.NEQ); vv != nil {
 					a := maps.Clone(assigned)
-					visit(b.Succs[0], fact{value: vv, kind: precededByBinOpErrNil}, a)
-				} else {
-					for _, d := range b.Dominees() {
+					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil}, a)
+					return
+				} else if vv := binOpErrNil(b, token.EQL); vv != nil {
+					if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
 						a := maps.Clone(assigned)
-						visit(d, fact{}, a)
+						visit(b.Succs[0], fact{value: vv, kind: precededByErrEqNil}, a)
+						return
 					}
+				}
+				for _, d := range b.Dominees() {
+					a := maps.Clone(assigned)
+					visit(d, fact{}, a)
 				}
 			}
 		}
-		_ = visit
 		for _, b := range fn.Blocks {
 			visit(b, fact{}, map[*ssa.Alloc]ssa.Value{})
 		}
-		// for _, b := range fn.Blocks {
-		// 	if v := binOpErrNil(b, token.NEQ); v != nil {
-		// 		fmt.Println("😍", pass.Fset.Position(v.Pos()).Line)
-		// 		for _, pred := range b.Succs[0].Preds {
-		// 			fmt.Println("\t", pred.Index, pred.Comment, pred, b.Succs[0])
-		// 		}
-		// 		if ret := isReturnNil(b.Succs[0]); ret != nil {
-		// 			if !usesErrorValue(b.Succs[0], v) {
-		// 				reportFail(v, ret, "error is not nil (%s) but it returns nil")
-		// 			}
-		// 		}
-		// 	} else if v := binOpErrNil(b, token.EQL); v != nil {
-		// 		if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-		// 			if ret := isReturnError(b.Succs[0], v); ret != nil {
-		// 				reportFail(v, ret, "error is nil (%s) but it returns error")
-		// 			}
-		// 		}
-		// 	}
-
-		// }
 	}
 
 	return nil, nil
@@ -120,9 +106,9 @@ type fact struct {
 type kind string
 
 const (
-	precededByBinOpErrNil   kind = "preceded by binOpErrNil"
-	none                    kind = ""
-	precededByBinOpErrNilEq kind = "preceded by binOpErrNilEq"
+	precededByErrNeqNil kind = "preceded by binOpErrNil"
+	none                kind = ""
+	precededByErrEqNil  kind = "preceded by binOpErrNilEq"
 )
 
 func getValueLineNumbers(pass *analysis.Pass, v ssa.Value) []int {
