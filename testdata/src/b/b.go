@@ -33,6 +33,20 @@ func f() (err error) {
 
 func g() (err error) {
 	defer wrap(&err)
+	err = do()
+	if err == nil {
+		return err // want "error is nil"
+	}
+
+	if err := do(); err == nil {
+		return err // want "error is nil"
+	}
+
+	bytes, err := do2()
+	if err == nil {
+		_ = bytes
+		return err // want "error is nil"
+	}
 
 	if err := do(); err == nil {
 		return errors.New("another error") // OK
@@ -102,6 +116,28 @@ func h() {
 	_ = f1
 }
 
+func i() (err1 error, err2 error) {
+	defer wrap(&err1)
+	defer wrap(&err2)
+	if err := do(); err != nil {
+		return nil, nil // want "error is not nil"
+	}
+
+	if err := do(); err != nil {
+		return nil, err
+	}
+
+	if err := do(); err != nil {
+		return err, nil
+	}
+
+	if err := do(); err != nil {
+		return err, err
+	}
+
+	return nil, nil
+}
+
 func j() (_ interface{}, err error) {
 	defer wrap(&err)
 	if err := do(); err != nil {
@@ -131,6 +167,35 @@ func k() {
 	if err := do(); err == nil {
 		return
 	}
+}
+
+func l() (err error) {
+	defer wrap(&err)
+	var e = errors.New("x")
+
+	bytes, err := do2()
+	if err != nil {
+		return err
+	}
+	defer func() error { return nil }()
+
+	for {
+		var buf []byte
+		buf, err = do2()
+		if err == e {
+			for err == e {
+				_, err = do2()
+			}
+			if err != nil {
+				err = errors.New("a")
+				break
+			}
+		}
+		_ = buf
+	}
+
+	_ = bytes
+	return nil // want "error is not nil"
 }
 
 func do() error {
