@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
-	"maps"
 
 	"github.com/gostaticanalysis/comment"
 	"github.com/gostaticanalysis/comment/passes/commentmap"
@@ -74,18 +73,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				}
 			default:
 				if vv := binOpErrNil(b, token.NEQ); vv != nil {
-					a := maps.Clone(assigned)
+					a := cloneAssigned(assigned)
 					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil}, a)
 					return
 				} else if vv := binOpErrNil(b, token.EQL); vv != nil {
 					if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-						a := maps.Clone(assigned)
+						a := cloneAssigned(assigned)
 						visit(b.Succs[0], fact{value: vv, kind: precededByErrEqNil}, a)
 						return
 					}
 				}
 				for _, d := range b.Dominees() {
-					a := maps.Clone(assigned)
+					a := cloneAssigned(assigned)
 					visit(d, fact{}, a)
 				}
 			}
@@ -110,6 +109,14 @@ const (
 	precededByErrNeqNil kind = 1
 	precededByErrEqNil  kind = 2
 )
+
+func cloneAssigned(assigned map[*ssa.Alloc]ssa.Value) map[*ssa.Alloc]ssa.Value {
+	result := make(map[*ssa.Alloc]ssa.Value, len(assigned))
+	for k, v := range assigned {
+		result[k] = v
+	}
+	return result
+}
 
 func getValueLineNumbers(pass *analysis.Pass, v ssa.Value) []int {
 	if phi, ok := v.(*ssa.Phi); ok {
