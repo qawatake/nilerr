@@ -14,11 +14,13 @@ func f() (err error) {
 		return nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		//lint:ignore nilerr reason
 		return nil // OK
 	}
@@ -129,20 +131,24 @@ func h() {
 func i() (err1 error, err2 error) {
 	defer wrap(&err1)
 	defer wrap(&err2)
-	if err := do(); err != nil {
+	err1 = do()
+	if err1 != nil {
 		return nil, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
-		return nil, err
+	err1 = do()
+	if err1 != nil {
+		return nil, err1
 	}
 
-	if err := do(); err != nil {
-		return err, nil
+	err1 = do()
+	if err1 != nil {
+		return err1, nil
 	}
 
-	if err := do(); err != nil {
-		return err, err
+	err1 = do()
+	if err1 != nil {
+		return err1, err1
 	}
 
 	return nil, nil
@@ -150,19 +156,23 @@ func i() (err1 error, err2 error) {
 
 func j() (_ interface{}, err error) {
 	defer wrap(&err)
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return nil, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return nil, err
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return err, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return err, err
 	}
 
