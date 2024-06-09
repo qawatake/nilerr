@@ -43,77 +43,33 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
-	var visit func(b *ssa.BasicBlock, f fact)
-
-	for _, fn := range funcs {
+	for i := range funcs {
 		a := make(assignments)
-		for _, b := range fn.Blocks {
+		for _, b := range funcs[i].Blocks {
 			for _, instr := range b.Instrs {
 				if store, ok := instr.(*ssa.Store); ok {
 					a.add(store)
 				}
 			}
 		}
-		seen := make([]bool, len(fn.Blocks)) // seen[i] means visit should ignore block i
-		visit = func(b *ssa.BasicBlock, f fact) {
-			if seen[b.Index] {
-				return
-			}
-			seen[b.Index] = true
-			switch f.kind {
-			case precededByErrNeqNil:
-				if ret := isReturnNil(b, a); ret != nil {
-					if !usesErrorValue(b, f.value) {
-						reportFail(f.value, ret, "error is not nil (%s) but it returns nil")
+		for _, b := range funcs[i].Blocks {
+			if v := binOpErrNil(b, token.NEQ); v != nil {
+				if ret := isReturnNil(b.Succs[0], a); ret != nil {
+					if !usesErrorValue(b.Succs[0], v) {
+						reportFail(v, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
-			case precededByErrEqNil:
-				if ret := isReturnError(b, f.value, a); ret != nil {
-					reportFail(f.value, ret, "error is nil (%s) but it returns error")
-					return
-				}
-			default:
-				if vv := binOpErrNil(b, token.NEQ); vv != nil {
-					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil})
-					return
-				} else if vv := binOpErrNil(b, token.EQL); vv != nil {
-					if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-						visit(b.Succs[0], fact{value: vv, kind: precededByErrEqNil})
-						return
+			} else if v := binOpErrNil(b, token.EQL); v != nil {
+				if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
+					if ret := isReturnError(b.Succs[0], v, a); ret != nil {
+						reportFail(v, ret, "error is nil (%s) but it returns error")
 					}
 				}
-				for _, d := range b.Dominees() {
-					visit(d, fact{})
-				}
 			}
-		}
-		for _, b := range fn.Blocks {
-			visit(b, fact{})
+
 		}
 	}
-
 	return nil, nil
-}
-
-type fact struct {
-	kind  kind
-	value ssa.Value
-}
-
-type kind int
-
-const (
-	none                kind = 0
-	precededByErrNeqNil kind = 1
-	precededByErrEqNil  kind = 2
-)
-
-func cloneAssigned(assigned map[*ssa.Alloc]ssa.Value) map[*ssa.Alloc]ssa.Value {
-	result := make(map[*ssa.Alloc]ssa.Value, len(assigned))
-	for k, v := range assigned {
-		result[k] = v
-	}
-	return result
 }
 
 func getValueLineNumbers(pass *analysis.Pass, v ssa.Value) []int {
