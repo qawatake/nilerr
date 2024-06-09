@@ -43,82 +43,52 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
-	var visit func(b *ssa.BasicBlock, f fact, assigned map[*ssa.Alloc]ssa.Value)
+	var visit func(b *ssa.BasicBlock, f fact)
 
 	for _, fn := range funcs {
+		a := make(assignments)
+		for _, b := range fn.Blocks {
+			for _, instr := range b.Instrs {
+				if store, ok := instr.(*ssa.Store); ok {
+					a.add(store)
+				}
+			}
+		}
 		seen := make([]bool, len(fn.Blocks)) // seen[i] means visit should ignore block i
-		visit = func(b *ssa.BasicBlock, f fact, assigned map[*ssa.Alloc]ssa.Value) {
+		visit = func(b *ssa.BasicBlock, f fact) {
 			if seen[b.Index] {
 				return
 			}
 			seen[b.Index] = true
 			switch f.kind {
 			case precededByErrNeqNil:
-				for _, instr := range b.Instrs {
-					switch instr := instr.(type) {
-					case *ssa.Store:
-						if a, ok := instr.Addr.(*ssa.Alloc); ok {
-							if alloc(instr.Val) != a {
-								assigned[a] = instr.Val
-							}
-						}
-					}
-				}
-				if ret := isReturnNil(b, assigned); ret != nil {
+				if ret := isReturnNil(b, a); ret != nil {
 					if !usesErrorValue(b, f.value) {
 						reportFail(f.value, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
 			case precededByErrEqNil:
-				a := assigned[alloc(f.value)]
-				for _, instr := range b.Instrs {
-					switch instr := instr.(type) {
-					case *ssa.Store:
-						if a, ok := instr.Addr.(*ssa.Alloc); ok {
-							if alloc(instr.Val) != a {
-								assigned[a] = instr.Val
-							}
-						}
-					}
-				}
-				if ret := isReturnError(b, f.value, assigned); ret != nil {
-					reportFail(f.value, ret, "error is nil (%s) but it returns error")
-					return
-				}
-				if ret := isReturnError(b, a, assigned); ret != nil {
+				if ret := isReturnError(b, f.value, a); ret != nil {
 					reportFail(f.value, ret, "error is nil (%s) but it returns error")
 					return
 				}
 			default:
-				for _, instr := range b.Instrs {
-					switch instr := instr.(type) {
-					case *ssa.Store:
-						if a, ok := instr.Addr.(*ssa.Alloc); ok {
-							if alloc(instr.Val) != a {
-								assigned[a] = instr.Val
-							}
-						}
-					}
-				}
 				if vv := binOpErrNil(b, token.NEQ); vv != nil {
-					a := cloneAssigned(assigned)
-					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil}, a)
+					visit(b.Succs[0], fact{value: vv, kind: precededByErrNeqNil})
 					return
 				} else if vv := binOpErrNil(b, token.EQL); vv != nil {
 					if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-						a := cloneAssigned(assigned)
-						visit(b.Succs[0], fact{value: vv, kind: precededByErrEqNil}, a)
+						visit(b.Succs[0], fact{value: vv, kind: precededByErrEqNil})
 						return
 					}
 				}
 				for _, d := range b.Dominees() {
-					a := cloneAssigned(assigned)
-					visit(d, fact{}, a)
+					visit(d, fact{})
 				}
 			}
 		}
 		for _, b := range fn.Blocks {
-			visit(b, fact{}, map[*ssa.Alloc]ssa.Value{})
+			visit(b, fact{})
 		}
 	}
 
@@ -214,7 +184,7 @@ func isConst(v ssa.Value) bool {
 	return ok
 }
 
-func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Return {
+func isReturnNil(b *ssa.BasicBlock, a assignments) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -237,10 +207,9 @@ func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Retu
 				return nil
 			}
 			continue
-		case *ssa.UnOp:
-			if p := alloc(v); p != nil {
-				c, ok := assigned[p].(*ssa.Const)
-				if ok && c.IsNil() {
+		case *ssa.UnOp: // 直前にnilをassignされている場合
+			if x := alloc(v); x != nil {
+				if c, ok := a.current(x, b.Instrs[len(b.Instrs)-1]).(*ssa.Const); ok && c.IsNil() {
 					continue
 				}
 			}
@@ -257,7 +226,7 @@ func isReturnNil(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value) *ssa.Retu
 	return ret
 }
 
-func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, assigned map[*ssa.Alloc]ssa.Value) *ssa.Return {
+func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, a assignments) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -271,8 +240,11 @@ func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, assigned map[*ssa.Alloc]
 		if v == errVal {
 			return ret
 		}
-		if alloc(v) != nil && alloc(errVal) == nil && assigned[alloc(v)] == errVal {
-			return ret
+		if alloc(v) != nil || alloc(errVal) != nil {
+			// returnされている値がif分岐の直後と同じ場合
+			if a.current(alloc(v), b.Instrs[len(b.Instrs)-1]) == a.current(alloc(errVal), b.Instrs[0]) {
+				return ret
+			}
 		}
 	}
 
@@ -397,4 +369,51 @@ func isUsedInValue(value, lookedFor ssa.Value) bool {
 	}
 
 	return false
+}
+
+// t0 : t11 -> t12 -> t13
+// *t0 := t11
+// *t0 := t12
+// *t0 := t13
+type assignments map[*ssa.Alloc][]*ssa.Store
+
+func (a assignments) add(s *ssa.Store) {
+	if s == nil {
+		return
+	}
+	if to, ok := s.Addr.(*ssa.Alloc); ok {
+		if alloc(s.Val) != to {
+			a[to] = append(a[to], s)
+		}
+	}
+}
+
+func (a assignments) current(x *ssa.Alloc, instr ssa.Instruction) ssa.Value {
+	stores := a[x]
+	if len(stores) == 0 {
+		return nil
+	}
+	b := instr.Block()
+	for i := len(stores) - 1; i >= 0; i-- {
+		s := stores[i]
+		if !(s.Block().Dominates(b) || s.Block() == b) {
+			continue
+		}
+		dominator := func(x, y ssa.Instruction) ssa.Instruction {
+			for _, i := range b.Instrs {
+				if i == x {
+					return x
+				}
+				if i == y {
+					return y
+				}
+			}
+			return nil
+		}(s, instr)
+		if dominator != s {
+			continue
+		}
+		return s.Val
+	}
+	return nil
 }
