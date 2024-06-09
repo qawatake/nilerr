@@ -43,6 +43,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
+	var visit func(b *ssa.BasicBlock, assigned map[*ssa.Alloc]ssa.Value)
+
 	for i := range funcs {
 		for _, b := range funcs[i].Blocks {
 			if v := binOpErrNil(b, token.NEQ); v != nil {
