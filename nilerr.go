@@ -44,11 +44,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 
-	var visit func(b *ssa.BasicBlock, nonnil ssa.Value, assigned map[*ssa.Alloc]ssa.Value)
+	var visit func(b *ssa.BasicBlock, f fact, assigned map[*ssa.Alloc]ssa.Value)
 
 	for _, fn := range funcs {
 		seen := make([]bool, len(fn.Blocks)) // seen[i] means visit should ignore block i
-		visit = func(b *ssa.BasicBlock, v ssa.Value, assigned map[*ssa.Alloc]ssa.Value) {
+		visit = func(b *ssa.BasicBlock, f fact, assigned map[*ssa.Alloc]ssa.Value) {
 			if seen[b.Index] {
 				return
 			}
@@ -61,31 +61,31 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					}
 				}
 			}
-			if v != nil { // preceded by binOpErrNil
+			switch f.kind {
+			case precededByBinOpErrNil:
 				if ret := isReturnNil(b, assigned); ret != nil {
 					// fmt.Println(v, "x", ret)
-					if !usesErrorValue(b, v) {
-						reportFail(v, ret, "error is not nil (%s) but it returns nil")
+					if !usesErrorValue(b, f.value) {
+						reportFail(f.value, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
-			} else { // not preceded by binOpErrNil
+			default:
 				vv := binOpErrNil(b, token.NEQ)
 				// fmt.Println(vv)
 				if vv != nil { //
 					a := maps.Clone(assigned)
-					visit(b.Succs[0], vv, a)
+					visit(b.Succs[0], fact{value: vv, kind: precededByBinOpErrNil}, a)
 				} else {
 					for _, d := range b.Dominees() {
 						a := maps.Clone(assigned)
-						visit(d, nil, a)
+						visit(d, fact{}, a)
 					}
 				}
 			}
-			// b.
 		}
 		_ = visit
 		for _, b := range fn.Blocks {
-			visit(b, nil, map[*ssa.Alloc]ssa.Value{})
+			visit(b, fact{}, map[*ssa.Alloc]ssa.Value{})
 		}
 		// for _, b := range fn.Blocks {
 		// 	if v := binOpErrNil(b, token.NEQ); v != nil {
@@ -111,6 +111,19 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	return nil, nil
 }
+
+type fact struct {
+	kind  kind
+	value ssa.Value
+}
+
+type kind string
+
+const (
+	precededByBinOpErrNil   kind = "preceded by binOpErrNil"
+	none                    kind = ""
+	precededByBinOpErrNilEq kind = "preceded by binOpErrNilEq"
+)
 
 func getValueLineNumbers(pass *analysis.Pass, v ssa.Value) []int {
 	if phi, ok := v.(*ssa.Phi); ok {

@@ -1,6 +1,11 @@
 package a
 
-import "errors"
+import (
+	"context"
+	"errors"
+	"log"
+	"testing"
+)
 
 func f() (err error) {
 	defer wrap(&err)
@@ -8,9 +13,163 @@ func f() (err error) {
 	if err != nil {
 		return nil // want "error is not nil"
 	}
-	return errors.New("hoge")
+
+	if err := do(); err != nil {
+		return nil // want "error is not nil"
+	}
+
+	if err := do(); err != nil {
+		//lint:ignore nilerr reason
+		return nil // OK
+	}
+
+	err = do()
+	if err == nil || checkErr(err) {
+		return err
+	}
+
+	return nil
 }
 
-func do() error { return nil }
+func g() (err error) {
+	defer wrap(&err)
+
+	if err := do(); err == nil {
+		return errors.New("another error") // OK
+	}
+
+	if err := do(); err != nil {
+		return errors.New(err.Error()) // OK, error is wrapped
+	}
+
+	if err := do(); err != nil {
+		CustomLoggingFunc(err) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		Logf(context.Background(), "error: %+v", err) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		Logf(context.Background(), "error: %s", err.Error()) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		LogTypedf(context.Background(), "error: %+v", err) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		LogSinglef(context.Background(), "error: %+v", err) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		NewLogger().CustomLoggingFunc(err) // OK
+		return nil
+	}
+
+	if err := do(); err != nil {
+		//lint:ignore nilerr reason
+		return nil // OK
+	}
+
+	return nil
+}
+
+func h() {
+	f0 := func() error {
+		for {
+			if err := do(); err != nil {
+				break
+			}
+		}
+		return nil // want "error is not nil"
+	}
+	_ = f0
+
+	f1 := func(t *testing.T) error {
+		for {
+			if err := do(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return nil
+	}
+	_ = f1
+}
+
+func j() (_ interface{}, err error) {
+	defer wrap(&err)
+	if err := do(); err != nil {
+		return nil, nil // want "error is not nil"
+	}
+
+	if err := do(); err != nil {
+		return nil, err
+	}
+
+	if err := do(); err != nil {
+		return err, nil // want "error is not nil"
+	}
+
+	if err := do(); err != nil {
+		return err, err
+	}
+
+	return nil, nil
+}
+
+func k() {
+	if err := do(); err != nil {
+		return
+	}
+
+	if err := do(); err == nil {
+		return
+	}
+}
+
+func do() error {
+	return nil
+}
+
+func do2() ([]byte, error) {
+	return nil, nil
+}
+
+func checkErr(err error) bool {
+	return true
+}
+
+func CustomLoggingFunc(err error) {
+	log.Printf("%+v", err)
+}
+
+func Logf(ctx context.Context, msg string, args ...interface{}) {
+	log.Printf(msg, args...)
+}
+
+func LogTypedf(ctx context.Context, msg string, args ...error) {
+	log.Printf(msg, args[0])
+}
+
+func LogSinglef(ctx context.Context, msg string, arg interface{}) {
+	log.Printf(msg, arg)
+}
+
+type logger int
+
+func NewLogger() *logger {
+	l := logger(0)
+	return &l
+}
+
+func (l *logger) CustomLoggingFunc(err error) {
+	log.Printf("%+v", err)
+}
 
 func wrap(errp *error) {}
