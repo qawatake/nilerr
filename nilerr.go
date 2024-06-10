@@ -355,24 +355,23 @@ func (a assignments) current(x *ssa.Alloc, instr ssa.Instruction) ssa.Value {
 		if !(s.Block().Dominates(b) || s.Block() == b) {
 			continue
 		}
-		if s.Block().Dominates(b) {
+		if s.Block().Dominates(b) && s.Block() != b {
 			return s.Val
 		}
-		dominator := func(x, y ssa.Instruction) ssa.Instruction {
-			for _, i := range b.Instrs {
-				if i == x {
-					return x
-				}
-				if i == y {
-					return y
+		indexOf := func(x ssa.Instruction) int {
+			for i, instr := range b.Instrs {
+				if instr == x {
+					return i
 				}
 			}
-			return nil
-		}(s, instr)
-		if dominator != s {
-			continue
+			return -1
 		}
-		return s.Val
+		indexOfS := indexOf(s)
+		indexOfInstr := indexOf(instr)
+		sDominatesInstr := indexOfS != -1 && indexOfInstr != -1 && indexOfS < indexOfInstr
+		if sDominatesInstr {
+			return s.Val
+		}
 	}
 	return nil
 }
