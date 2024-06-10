@@ -355,6 +355,9 @@ func (a assignments) current(x *ssa.Alloc, instr ssa.Instruction) ssa.Value {
 		if !(s.Block().Dominates(b) || s.Block() == b) {
 			continue
 		}
+		if s.Block().Dominates(b) {
+			return s.Val
+		}
 		dominator := func(x, y ssa.Instruction) ssa.Instruction {
 			for _, i := range b.Instrs {
 				if i == x {
