@@ -44,16 +44,24 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	for i := range funcs {
+		a := make(assignments)
+		for _, b := range funcs[i].Blocks {
+			for _, instr := range b.Instrs {
+				if store, ok := instr.(*ssa.Store); ok {
+					a.add(store)
+				}
+			}
+		}
 		for _, b := range funcs[i].Blocks {
 			if v := binOpErrNil(b, token.NEQ); v != nil {
-				if ret := isReturnNil(b.Succs[0]); ret != nil {
+				if ret := isReturnNil(b.Succs[0], a); ret != nil {
 					if !usesErrorValue(b.Succs[0], v) {
 						reportFail(v, ret, "error is not nil (%s) but it returns nil")
 					}
 				}
 			} else if v := binOpErrNil(b, token.EQL); v != nil {
 				if len(b.Succs[0].Preds) == 1 { // if there are multiple conditions, this may be false positive
-					if ret := isReturnError(b.Succs[0], v); ret != nil {
+					if ret := isReturnError(b.Succs[0], v, a); ret != nil {
 						reportFail(v, ret, "error is nil (%s) but it returns error")
 					}
 				}
@@ -61,7 +69,6 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		}
 	}
-
 	return nil, nil
 }
 
@@ -133,7 +140,7 @@ func isConst(v ssa.Value) bool {
 	return ok
 }
 
-func isReturnNil(b *ssa.BasicBlock) *ssa.Return {
+func isReturnNil(b *ssa.BasicBlock, a assignments) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -150,12 +157,20 @@ func isReturnNil(b *ssa.BasicBlock) *ssa.Return {
 		}
 
 		errorReturnValues++
-		v, ok := res.(*ssa.Const)
-		if !ok {
+		switch v := res.(type) {
+		case *ssa.Const:
+			if !v.IsNil() {
+				return nil
+			}
+			continue
+		case *ssa.UnOp: // 直前にnilをassignされている場合
+			if x := alloc(v); x != nil {
+				if c, ok := a.current(x, b.Instrs[len(b.Instrs)-1]).(*ssa.Const); ok && c.IsNil() {
+					continue
+				}
+			}
 			return nil
-		}
-
-		if !v.IsNil() {
+		default:
 			return nil
 		}
 	}
@@ -167,7 +182,7 @@ func isReturnNil(b *ssa.BasicBlock) *ssa.Return {
 	return ret
 }
 
-func isReturnError(b *ssa.BasicBlock, errVal ssa.Value) *ssa.Return {
+func isReturnError(b *ssa.BasicBlock, errVal ssa.Value, a assignments) *ssa.Return {
 	if len(b.Instrs) == 0 {
 		return nil
 	}
@@ -181,8 +196,27 @@ func isReturnError(b *ssa.BasicBlock, errVal ssa.Value) *ssa.Return {
 		if v == errVal {
 			return ret
 		}
+		if alloc(v) != nil || alloc(errVal) != nil {
+			// returnされている値がif分岐の直後と同じ場合
+			if a.current(alloc(v), b.Instrs[len(b.Instrs)-1]) == a.current(alloc(errVal), b.Instrs[0]) {
+				return ret
+			}
+		}
 	}
 
+	return nil
+}
+
+// *t0 (t0 is a *ssa.Alloc) -> t0
+// otherwise returns nil
+func alloc(v ssa.Value) *ssa.Alloc {
+	if unop, ok := v.(*ssa.UnOp); ok {
+		if unop.Op == token.MUL {
+			if alloc, ok := unop.X.(*ssa.Alloc); ok {
+				return alloc
+			}
+		}
+	}
 	return nil
 }
 
@@ -275,6 +309,9 @@ func isUsedInValue(value, lookedFor ssa.Value) bool {
 	if value == lookedFor {
 		return true
 	}
+	if alloc(value) != nil && alloc(lookedFor) != nil && alloc(value) == alloc(lookedFor) {
+		return true
+	}
 
 	switch value := value.(type) {
 	case *ssa.ChangeInterface:
@@ -288,4 +325,53 @@ func isUsedInValue(value, lookedFor ssa.Value) bool {
 	}
 
 	return false
+}
+
+// t0 : t11 -> t12 -> t13
+// *t0 := t11
+// *t0 := t12
+// *t0 := t13
+type assignments map[*ssa.Alloc][]*ssa.Store
+
+func (a assignments) add(s *ssa.Store) {
+	if s == nil {
+		return
+	}
+	if to, ok := s.Addr.(*ssa.Alloc); ok {
+		if alloc(s.Val) != to {
+			a[to] = append(a[to], s)
+		}
+	}
+}
+
+func (a assignments) current(x *ssa.Alloc, instr ssa.Instruction) ssa.Value {
+	stores := a[x]
+	if len(stores) == 0 {
+		return nil
+	}
+	b := instr.Block()
+	for i := len(stores) - 1; i >= 0; i-- {
+		s := stores[i]
+		if !(s.Block().Dominates(b) || s.Block() == b) {
+			continue
+		}
+		if s.Block().Dominates(b) && s.Block() != b {
+			return s.Val
+		}
+		indexOf := func(x ssa.Instruction) int {
+			for i, instr := range b.Instrs {
+				if instr == x {
+					return i
+				}
+			}
+			return -1
+		}
+		indexOfS := indexOf(s)
+		indexOfInstr := indexOf(instr)
+		sDominatesInstr := indexOfS != -1 && indexOfInstr != -1 && indexOfS < indexOfInstr
+		if sDominatesInstr {
+			return s.Val
+		}
+	}
+	return nil
 }

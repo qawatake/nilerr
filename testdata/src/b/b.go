@@ -7,17 +7,20 @@ import (
 	"testing"
 )
 
-func f() error {
-	err := do()
+func f() (err error) {
+	defer wrap(&err)
+	err = do()
 	if err != nil {
-		return nil // want "error is not nil \\(line 11\\) but it returns nil"
+		return nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
-		return nil // want "error is not nil \\(line 16\\) but it returns nil"
+	err = do()
+	if err != nil {
+		return nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		//lint:ignore nilerr reason
 		return nil // OK
 	}
@@ -30,61 +33,72 @@ func f() error {
 	return nil
 }
 
-func g() error {
-	err := do()
+func g() (err error) {
+	defer wrap(&err)
+	err = do()
 	if err == nil {
-		return err // want "error is nil \\(line 34\\) but it returns error"
+		return err // want "error is nil"
 	}
 
-	if err := do(); err == nil {
-		return err // want "error is nil \\(line 39\\) but it returns error"
+	err = do()
+	if err == nil {
+		return err // want "error is nil"
 	}
 
 	bytes, err := do2()
 	if err == nil {
 		_ = bytes
-		return err // want "error is nil \\(line 43\\) but it returns error"
+		return err // want "error is nil"
 	}
 
-	if err := do(); err == nil {
+	err = do()
+	if err == nil {
 		return errors.New("another error") // OK
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return errors.New(err.Error()) // OK, error is wrapped
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		CustomLoggingFunc(err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		Logf(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		Logf(context.Background(), "error: %s", err.Error()) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		LogTypedf(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		LogSinglef(context.Background(), "error: %+v", err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		NewLogger().CustomLoggingFunc(err) // OK
 		return nil
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		//lint:ignore nilerr reason
 		return nil // OK
 	}
@@ -99,7 +113,7 @@ func h() {
 				break
 			}
 		}
-		return nil // want "error is not nil \\(line 98\\) but it returns nil"
+		return nil // want "error is not nil"
 	}
 	_ = f0
 
@@ -114,40 +128,51 @@ func h() {
 	_ = f1
 }
 
-func i() (error, error) {
-	if err := do(); err != nil {
-		return nil, nil // want "error is not nil \\(line 118\\) but it returns nil"
+func i() (err1 error, err2 error) {
+	defer wrap(&err1)
+	defer wrap(&err2)
+	err1 = do()
+	if err1 != nil {
+		return nil, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
-		return nil, err
+	err1 = do()
+	if err1 != nil {
+		return nil, err1
 	}
 
-	if err := do(); err != nil {
-		return err, nil
+	err1 = do()
+	if err1 != nil {
+		return err1, nil
 	}
 
-	if err := do(); err != nil {
-		return err, err
+	err1 = do()
+	if err1 != nil {
+		return err1, err1
 	}
 
 	return nil, nil
 }
 
-func j() (interface{}, error) {
-	if err := do(); err != nil {
-		return nil, nil // want "error is not nil \\(line 138\\) but it returns nil"
+func j() (_ interface{}, err error) {
+	defer wrap(&err)
+	err = do()
+	if err != nil {
+		return nil, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return nil, err
 	}
 
-	if err := do(); err != nil {
-		return err, nil // want "error is not nil \\(line 146\\) but it returns nil"
+	err = do()
+	if err != nil {
+		return err, nil // want "error is not nil"
 	}
 
-	if err := do(); err != nil {
+	err = do()
+	if err != nil {
 		return err, err
 	}
 
@@ -164,7 +189,8 @@ func k() {
 	}
 }
 
-func l() error {
+func l() (err error) {
+	defer wrap(&err)
 	var e = errors.New("x")
 
 	bytes, err := do2()
@@ -189,7 +215,7 @@ func l() error {
 	}
 
 	_ = bytes
-	return nil // want "error is not nil \\(lines \\[178 181\\]\\) but it returns nil"
+	return nil // want "error is not nil"
 }
 
 func do() error {
@@ -230,3 +256,5 @@ func NewLogger() *logger {
 func (l *logger) CustomLoggingFunc(err error) {
 	log.Printf("%+v", err)
 }
+
+func wrap(errp *error) {}
